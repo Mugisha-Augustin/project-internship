@@ -1,0 +1,25 @@
+{
+  "name": "pocket-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "next": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "recharts": "^3.8.1",
+    "@tailwindcss/postcss": "^4.3.0"
+  },
+  "devDependencies": {
+    "typescript": "6.0.3",
+    "@types/node": "25.8.0",
+    "@types/react": "19.2.14",
+    "postcss": "^8.5.14",
+    "tailwindcss": "^4.3.0",
+    "autoprefixer": "^10.5.0"
+  }
+}
