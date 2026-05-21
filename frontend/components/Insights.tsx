@@ -33,7 +33,7 @@ export default function Insights({
 }: {
   byCategory: { category: string; total: number }[];
   last7Days: { day: string; total: number }[];
-  allStats: any;
+  allStats?: any;
 }) {
   const [mounted, setMounted] = useState(false);
 

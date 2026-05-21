@@ -31,11 +31,19 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'recent' | 'insights'>('recent');
   
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [total, setTotal] = useState(0);
   const [category, setCategory] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const limit = 10;
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast(null);
+    }, 3500);
+  }
 
   async function fetchData() {
     const queryParams = new URLSearchParams({
@@ -51,23 +59,38 @@ export default function Home() {
         fetch(`${API}/expenses?${queryParams}`),
         fetch(`${API}/expenses/stats`),
       ]);
+      
+      if (!expRes.ok || !statsRes.ok) {
+        throw new Error('API server returned an error.');
+      }
+      
       const expData = await expRes.json();
       setExpenses(expData.data || []);
       setTotal(expData.total || 0);
       setStats(await statsRes.json());
     } catch (err) {
       console.error('Failed to fetch data:', err);
+      showToast('Offline Mode — Failed to connect to server.', 'error');
     }
   }
 
   useEffect(() => {
     fetchData();
-  }, [page, category, startDate, endDate]);
+  }, [page, limit, category, startDate, endDate]);
 
   async function handleDelete(id: number) {
     if (!confirm('Are you sure you want to delete this expense?')) return;
-    await fetch(`${API}/expenses/${id}`, { method: 'DELETE' });
-    fetchData();
+    try {
+      const res = await fetch(`${API}/expenses/${id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to delete expense');
+      }
+      showToast('Expense deleted successfully!');
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to delete expense', 'error');
+    }
   }
 
   async function handleAdd(data: {
@@ -76,42 +99,56 @@ export default function Home() {
     note: string;
     date: string;
   }) {
-    await fetch(`${API}/expenses`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data),
-    });
-    setShowModal(false);
-    fetchData();
+    try {
+      const res = await fetch(`${API}/expenses`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Failed to save expense');
+      }
+      showToast('Expense saved successfully!');
+      setShowModal(false);
+      fetchData();
+    } catch (err: any) {
+      showToast(err.message || 'Failed to save expense', 'error');
+    }
   }
 
   const exportToCSV = () => {
     if (expenses.length === 0) {
-      alert('No expenses to export.');
+      showToast('No expenses to export.', 'error');
       return;
     }
     
-    // Create CSV rows
-    const headers = ['ID', 'Amount (FRW)', 'Category', 'Note', 'Date'];
-    const rows = expenses.map(e => [
-      e.id,
-      e.amount,
-      `"${(e.category || '').replace(/"/g, '""')}"`,
-      `"${(e.note || '').replace(/"/g, '""')}"`,
-      new Date(e.date).toISOString().split('T')[0]
-    ]);
+    try {
+      // Create CSV rows
+      const headers = ['ID', 'Amount (FRW)', 'Category', 'Note', 'Date'];
+      const rows = expenses.map(e => [
+        e.id,
+        e.amount,
+        `"${(e.category || '').replace(/"/g, '""')}"`,
+        `"${(e.note || '').replace(/"/g, '""')}"`,
+        new Date(e.date).toISOString().split('T')[0]
+      ]);
 
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    
-    // Create download link using Blob
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `pocket_expenses_report_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      
+      // Create download link using Blob
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `pocket_expenses_report_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('CSV report downloaded successfully!');
+    } catch (err: any) {
+      showToast('Failed to export CSV.', 'error');
+    }
   };
 
   return (
@@ -126,8 +163,10 @@ export default function Home() {
             </svg>
           </div>
           <div>
-            <h1 className="text-[22px] font-bold text-gray-900 leading-tight">Pocket</h1>
-            <p className="text-[13px] font-medium text-gray-400">Simple expense tracker</p>
+            <h1 className="text-[22px] font-bold text-gray-900 leading-tight flex items-center gap-2">
+              Pocket <span className="bg-[#1a6b3c]/10 text-[#1a6b3c] text-[11px] font-extrabold px-2 py-0.5 rounded-full border border-[#1a6b3c]/20">PRO</span>
+            </h1>
+            <p className="text-[13px] font-medium text-gray-400">Advanced Analytics & Expense Tracker</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -235,30 +274,63 @@ export default function Home() {
             
             <ExpenseList expenses={expenses} onDelete={handleDelete} />
             
-            {total > limit && (
-              <div className="flex justify-between items-center bg-white/50 p-5 rounded-[1.5rem] border border-white/40">
+            {/* Professional Pagination Bar */}
+            <div className="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white/50 p-5 rounded-[1.5rem] border border-white/40 backdrop-blur-sm shadow-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-[12px] font-bold text-gray-400 uppercase">Show</span>
+                <select
+                  value={limit}
+                  onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                  className="bg-white border border-gray-100 rounded-xl px-3 py-1.5 text-[13px] font-bold text-gray-700 focus:outline-none cursor-pointer"
+                >
+                  <option value="5">5 rows</option>
+                  <option value="10">10 rows</option>
+                  <option value="25">25 rows</option>
+                  <option value="50">50 rows</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
                 <button
                   disabled={page === 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="px-6 py-2.5 bg-white border border-gray-100 rounded-xl text-[14px] font-bold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40 cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center bg-white border border-gray-100 rounded-xl text-[14px] font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-30 cursor-pointer transition-colors"
+                  title="Previous Page"
                 >
-                  Previous
+                  &larr;
                 </button>
-                <span className="text-[14px] font-bold text-gray-400">
-                  Page {page} of {Math.ceil(total / limit) || 1}
-                </span>
+
+                {Array.from({ length: Math.ceil(total / limit) || 1 }, (_, i) => i + 1).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-9 h-9 flex items-center justify-center rounded-xl text-[14px] font-bold cursor-pointer transition-all ${
+                      page === p
+                        ? 'bg-[#1a6b3c] text-white shadow-md'
+                        : 'bg-white border border-gray-100 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+
                 <button
                   disabled={page * limit >= total}
                   onClick={() => setPage((p) => p + 1)}
-                  className="px-6 py-2.5 bg-white border border-gray-100 rounded-xl text-[14px] font-bold text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40 cursor-pointer"
+                  className="w-9 h-9 flex items-center justify-center bg-white border border-gray-100 rounded-xl text-[14px] font-bold text-gray-700 hover:bg-gray-50 disabled:opacity-30 cursor-pointer transition-colors"
+                  title="Next Page"
                 >
-                  Next
+                  &rarr;
                 </button>
               </div>
-            )}
+              
+              <span className="text-[13px] font-bold text-gray-400">
+                Total {total} entries
+              </span>
+            </div>
           </div>
         ) : (
-          <Insights byCategory={stats?.by_category ?? []} last7Days={stats?.last_7_days ?? []} />
+          <Insights byCategory={stats?.by_category ?? []} last7Days={stats?.last_7_days ?? []} allStats={stats} />
         )}
 
         <p className="text-center text-[13px] font-bold text-gray-400/60 pt-4">Data stored professionally in PostgreSQL.</p>
@@ -267,6 +339,24 @@ export default function Home() {
       {/* Modal */}
       {showModal && (
         <ExpenseModal onClose={() => setShowModal(false)} onSave={handleAdd} />
+      )}
+
+      {/* Modern Floating Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 px-6 py-4 rounded-[1.2rem] shadow-xl flex items-center gap-3 transition-all duration-300 transform translate-y-0 animate-bounce ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-gray-900 text-white'
+        }`}>
+          {toast.type === 'error' ? (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          ) : (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          )}
+          <span className="text-[14px] font-bold">{toast.message}</span>
+        </div>
       )}
     </main>
   );
